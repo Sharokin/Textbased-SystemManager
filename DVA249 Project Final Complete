@@ -1,0 +1,962 @@
+#!/bin/bash
+#Projekt Grupp: Sharokin Issa, Martin Lindblad
+#GLOBALVAR
+STL="\e[0m"
+STLI="\e[3m"
+STLF="\e[2m"
+STLB="\e[1m"
+CLRR="\e[31m"
+CLRY="\e[93m"
+
+MARGIN="                                    "
+LINEB="===================================="
+LINE="------------------------------------"
+LINEBR="\n------------------------------------\n"
+
+function continue(){
+ echo -e $LINEBR
+ echo -n -e "${STLF}Continue... "
+ read
+ echo -e $STL
+}
+
+function header(){
+ echo $LINEB
+ echo -e "$2$1${STL}"
+ echo -e $LINEBR
+}
+
+function title(){
+ echo $LINE
+ echo -e $1
+ echo -e $MARGIN
+}
+
+function menuoption(){
+ echo -e "${CLRR}[$1] ${CLRY}$3$2${STL}"
+ echo $MARGIN
+}
+
+#NETWORK
+function networkManager(){
+ NM=1
+ while [ $NM -eq 1 ] 
+ do
+   clear
+   header "Network Manager" $CLRY
+   menuoption 1 "Network interfaces"   
+   menuoption 0 "Exit"
+   echo -e $LINEBR
+   echo -n " option: "
+   read OPTION
+  
+   case ${OPTION^^} in
+     1)
+       network_interfaces
+       ;;
+     0)
+       NM=0
+       ;;
+     *)
+       echo " Invalid option: '$OPTION'"
+       continue 
+       ;;
+   esac
+ done
+}
+
+function network_interfaces(){
+ clear
+ header "Interfaces" $CLRY
+  
+ INTERFACES=`ip address | awk '/^[0-9]+:/ {print $2}' | sed 's/://' | egrep -v '^lo$'`;
+ for INTERFACE in $INTERFACES
+ do   
+   echo -e "${STLB}Interface:${STL} $INTERFACE"
+   echo -n -e "${STLB}IPv4:${STL} "; ip -4 address show $INTERFACE | awk '/inet [0-9]+\./ {print $2}'
+   echo -n -e "${STLB}MAC:${STL} "; ip address show $INTERFACE | awk '/link\// {print $2}'
+   echo -n -e "${STLB}Gateway:${STL} "; ip route | grep $INTERFACE | awk '/default/ {print $3}'
+   echo -n -e "${STLB}Status:${STL} "; ip address show $INTERFACE | grep default | sed 's/.* state //' | sed 's/ group.*//' | awk '{print $1}'
+   echo -e $MARGIN
+ done
+ continue
+}
+
+#USER
+function userManager(){
+ UM=1
+ while [ $UM -eq 1 ]
+ do
+   clear
+   header "User Manager" $CLRY
+   menuoption 1 "List Users"
+   menuoption 2 "Add User"
+   menuoption 3 "Remove User"
+   menuoption 4 "User Attribute list"
+   menuoption 5 "User Attribute edit"
+   menuoption 0 "Exit User Manager"
+   echo -e $LINEBR
+   echo -n " option: "; read OPTION
+   case ${OPTION^^} in
+     1|L)
+       user_list
+       ;;
+     2|A)
+       user_add
+       ;;
+     3|R)
+       user_remove
+       ;;
+     4|AT)
+       user_attributes_list
+       ;;
+     5|ATE)
+       user_attributes_edit
+       ;;
+     0|X|Q)
+       UM=0
+       ;;
+     *)
+       echo " Invalid option: '$OPTION'"
+       continue
+       ;;
+   esac
+ done
+}
+
+function user_add()
+{
+ clear
+ header "Add User"
+ echo -n "username: "
+ read NAME
+ useradd -m $NAME 2>/dev/null
+ if [[ $? -eq 0 ]]
+ then
+   echo $MARGIN
+   echo $LINE
+   echo "User '$NAME' added"
+ else
+   echo $MARGIN
+   echo $LINE
+   echo "Exception when adding user"
+   echo "User '$NAME' already exists"
+ fi
+ continue
+}
+
+function user_remove()
+{
+ clear
+ header "Remove user"
+ echo -e -n "Username: "
+ read NAME
+ userdel -r $NAME 2>/dev/null
+ if [[ $? -eq 0 ]]
+ then
+   echo $MARGIN
+   echo $LINE
+   echo "User '$NAME' removed" 
+ else
+   echo $MARGIN
+   echo $LINE
+   echo "Exception when removing user"
+   echo "User '$NAME' does not exist"
+ fi
+ continue
+}
+
+user_list()
+{
+ clear
+ header "User list"
+ awk -F: '{ if( $3 >= 1000 ) { print $1 }}' /etc/passwd | grep -v nobody
+ continue
+}
+
+user_attributes_list()
+{
+ clear
+ header "User attributes list"
+ echo -n "Username: "
+ read NAME
+ id -u $NAME &>/dev/null
+ if [[ $? -eq 0 ]]
+ then               
+   egrep ^$NAME /etc/passwd | awk -F: '{ print "Password: " $2,"\nUserID: " $3,"\nGroupID " $4,"\nComment: " $5,"\nDirectory: " $6,"\nShell: " $7 }'
+   echo -n "Groups: "
+   id -Gn $NAME | sed "s/ /, /g"   
+ else
+   echo "Exeption when listing attributes."
+   echo "User '$NAME' not found"
+ fi
+ continue
+}
+
+user_attributes_edit_username(){
+ echo -e $LINEBR
+ echo "Edit Username" 
+ echo -n "username: "
+ read NAME
+ usermod -l $NAME $USR &>/dev/null
+ if [[ $? -eq 0 ]]
+ then
+   echo "User '$USR' username set to '$NAME'"
+ else
+   echo "Exception when changing username"
+   echo "User '$NAME' already exsists"
+ fi
+}
+
+user_attributes_edit_password(){
+ echo -e $LINEBR
+ echo "Edit Password" 
+ echo -n "password: "
+ read -s PASS
+ echo -e "$PASS\n$PASS" | passwd $USR &>/dev/null
+ if [[ $? -eq 0 ]]
+ then
+   echo "User '$USR' password changed"
+ else
+   echo "Exception when changing password"
+   echo "Password remains unchanged"
+ fi
+}
+
+user_attributes_edit_userid(){
+ echo -e $LINEBR
+ echo "Edit userID" 
+ echo -n "uid: "
+ read NEWID
+ while [ $NEWID -lt 1000 ] &>/dev/null
+ do
+   echo "UserID must be 1000 or higher"
+   read NEWID
+ done
+ usermod -u $NEWID $USR &>/dev/null
+ if [[ $? -eq 0 ]]
+ then
+   echo "User '$USR' userID set to '$NEWID'"
+ else
+   echo "Exception when editing userID"
+   echo "UserID '$NEWID' already in use"
+ fi
+}
+
+user_attributes_edit_pgid(){
+ echo -e $LINEBR
+ echo "Edit GroupID"
+ echo -n "gid: "
+ read NEWID
+ usermod -g $NEWID $USR &>/dev/null
+ if [[ $? -eq 0 ]]
+ then
+   echo "User '$USR' groupID set to '$NEWID'"
+ else
+   echo "Exception when editing pgid"
+   echo "GroupID '$NEWID' does not exist"
+ fi
+}
+
+user_attributes_edit_comment(){
+ echo -e $LINEBR
+ echo "Edit comment"
+ echo -n "comment: "
+ read COMMENT
+ usermod -c "$COMMENT" $USR 2>/dev/null
+ if [[ $? -eq 0 ]]
+ then
+   echo "User '$USR' comment set to '$COMMENT'"
+ else
+   echo "Exception when editing user comment"
+ fi
+}
+
+user_attributes_edit_home(){
+ echo -e $LINEBR
+ echo "Edit home directory path"
+ echo -n "homepath: "
+ read DIR
+ usermod -m -d $DIR $USR 2>/dev/null
+ if [[ $? -eq 0 ]]
+ then
+   echo "User '$USR' home directory set to '$DIR'"
+ else
+   echo "Exception when editing user home directory path"
+ fi
+}
+
+
+user_attributes_edit_shell(){
+ echo -e $LINEBR
+ echo "Edit shell path"
+ echo -n "shellpath: "
+ read SHELL
+ usermod -c $SHEL $USR 2>/dev/null
+ if [[ $? -eq 0 ]]
+ then
+   echo "User '$USR' shell path set to '$SHELL'"
+ else
+   echo "Exception when editing user shell path"
+ fi
+}
+
+user_attributes_edit()
+{
+ clear
+ header "Edit User Attributes"
+ echo -n "Username: "
+ read USR
+ id -u $USR &>/dev/null
+ if [[ $? -eq 0 ]]
+ then
+   echo -e $LINEBR
+   menuoption 1 "Edit username"
+   menuoption 2 "Edit password"
+   menuoption 3 "Edit userID"
+   menuoption 4 "Edit primary-groupID"
+   menuoption 5 "Edit comment"
+   menuoption 6 "Edit home-directory-path"
+   menuoption 7 "Edit shell-path"
+   menuoption "ANY" "Exit"
+   echo -e $LINEBR
+   echo -n " option: "; read OPTION
+   case ${OPTION^^} in
+     1)
+       user_attributes_edit_username
+       ;;
+     2)
+       user_attributes_edit_password
+       ;;
+     3)
+       user_attributes_edit_userid
+       ;;
+     4)
+       user_attributes_edit_pgid
+       ;;
+     5)
+       user_attributes_edit_comment
+       ;;
+     6)
+       user_attributes_edit_home
+       ;;
+     7)
+       user_attributes_edit_shell
+       ;;
+     *)
+       echo "EXITING..."
+       ;;
+   esac
+ else
+   echo "Exception when editing user attributes"
+   echo "User '$USR' not found"
+ fi
+ continue
+}
+
+#GROUP
+function groupManager(){
+ GM=1
+ while [ $GM -eq 1 ]
+ do
+   clear
+   header "Group Manager" $CLRY
+   menuoption 1 "List groups"
+   menuoption 2 "Add group"
+   menuoption 3 "Remove group"
+   menuoption 4 "List groupmembers"
+   menuoption 5 "Add groupmember"
+   menuoption 6 "Remove groupmember"
+   menuoption 0 "Exit Group Manager"
+   echo -e $LINEBR 
+   echo -n " option: "; read OPTION
+   case ${OPTION^^} in
+     1)
+       group_list
+       ;;
+     2)
+       group_add
+       ;;
+     3)
+       group_remove
+       ;;
+     4)
+       group_user_list
+       ;;
+     5)
+       group_user_add
+       ;;
+     6)
+       group_user_remove
+       ;;
+     0)
+       GM=0
+       ;;
+     *)
+       echo " Invalid option: '$OPTION'"
+       continue
+       ;;
+   esac
+ done
+}
+
+function group_list(){
+ clear
+ header "Group list"
+ getent group | awk -F: '{ if( $3 >= 1000 ) { print $1 }}' | grep -v nogroup
+ continue
+}
+
+function group_add(){
+ clear
+ header "Add Group"
+ echo -n "Groupname: "; read GROUP
+ groupadd $GROUP >/dev/null 2>&1
+ if [[ $? -eq 0 ]]
+ then
+   echo "Group '$GROUP' Added"
+ else
+   echo "Exception when adding group"
+   echo "Group '$GROUP' does not exsist" 
+ fi
+ continue
+}
+
+function group_remove(){
+ clear
+ header "Remove Group"
+ echo -n "Groupname: "
+ read GROUP
+ groupdel $GROUP >/dev/null 2>&1
+ if [[ $? -eq 0 ]]
+ then
+   echo "Group '$GROUP' Removed"
+ else
+   echo "Exception when removing group '$GROUP'"
+ fi
+ continue
+}
+
+function group_user_list(){
+ clear
+ header "List Groupmembers"
+ echo -n "Groupname: "
+ read GROUP
+ MEMBERS=`cat /etc/group | grep $GROUP | awk -F: '{print $4}'`
+ echo $MARGIN
+ echo "Members: "
+ for MEMBER in ${MEMBERS//,/ }
+ do
+   echo $MEMBER
+ done
+ continue
+}
+
+function group_user_add(){
+ clear
+ header "Add Groupmember"
+ echo -n "Groupname: "
+ read GROUP
+ echo -n "Username: "
+ read USERNAME
+ echo -e $LINEBR
+ gpasswd -a $USERNAME $GROUP >/dev/null 2>&1
+ if [[ $? -eq 0 ]]
+ then
+   echo "User '$USERNAME' added to group '$GROUP'"
+ else
+   echo "Exception when adding user '$USERNAME' to group '$GROUP'"
+ fi
+ continue
+}
+
+function group_user_remove(){
+ clear
+ header "Remove Groupmember"
+ echo -n "Groupname: "
+ read GROUP
+ echo -n "Username: "
+ read USERNAME
+ echo -e $LINEBR
+ gpasswd -d $USERNAME $GROUP
+ if [[ $? -eq 0 ]]
+ then
+   echo "User '$USERNAME' removed from group '$GROUP'"
+ else
+   echo "Exception when removing user '$USERNAME' from group '$GROUP'"
+ fi
+ continue
+}
+
+#DIRECTORIES
+function directoryManager(){
+ DM=1
+ while [ $DM -eq 1 ]
+ do
+   clear
+   header "Directory Manager" $CLRY
+   menuoption 1 "List directory content"
+   menuoption 2 "Add directory"
+   menuoption 3 "Remove directory"
+   menuoption 4 "Edit directory"
+   menuoption 0 "Exit"
+   echo -e $LINEBR
+   echo -n " option: "; read OPTION
+   case ${OPTION^^} in
+     1)
+       directory_list
+       ;;
+     2)
+       directory_add
+       ;;
+     3)
+       directory_remove
+       ;;
+     4)
+       directory_edit
+       ;;
+     0|X|Q)
+       DM=0
+       ;;
+     *)
+       echo " Invalid option: '$OPTION'"
+       continue
+       ;;   
+   esac  
+ done
+}
+
+function directory_add()
+{
+ clear
+ header "Add Directory"
+ echo -n "Directory name: "; read DIR
+ mkdir $DIR >/dev/null 2>&1
+ if [[ $? -eq 0 ]]
+ then
+   echo $MARGIN
+   echo -e "Directory $DIR created!"
+ else
+   echo $MARGIN
+   echo -e "$DIR already exists"
+ fi
+ continue
+}
+
+function directory_remove()
+{
+ clear
+ header "Remove Directory" 
+ echo -n "Directory name: "
+ read DIRNAME
+ rm -r $DIRNAME 2>/dev/null
+ if [[ $? -eq 0 ]]
+ then
+   echo $MARGIN
+   echo -e "Directory $DIRNAME removed"
+ else
+   echo $MARGIN
+   echo -e "Directory $DIRNAME does not exist"
+ fi
+ continue
+}
+
+function directory_list()
+{
+ clear
+ header "Directory content list"
+ echo -n "directory: "
+ read DIR
+ echo $MARGIN
+ ls $DIR 2>/dev/null
+ if [[ $? -ne 0 ]]
+ then
+   echo $MARGIN
+   echo -e "$DIR was not found"
+ fi
+ continue
+}
+
+function directory_edit_owner(){
+ echo -e $LINEBR
+ echo "Edit Directory Owner"
+ echo -n "directory: "
+ read DIR
+ [ -d $DIR ]
+ if [[ $? -eq 0 ]]
+ then   
+   echo -n "Current owner: "; ls -dl $DIR | awk '{print $3}'
+   echo $MARGIN
+   echo -n "New owner: "; read OWNER
+   chown $OWNER $DIR 2> /dev/null
+   if [[ $? -eq 0 ]]
+   then
+     echo "User '$OWNER' is set to owner of directory '$DIR'"
+   else
+     echo "Exception when setting owner"
+     echo "User '$OWNER' does not exsist"
+   fi
+ else
+   echo "Exception when selecting directory"
+   echo -e "Directory '$DIR' does not exsist"
+ fi
+}
+
+function directory_edit_group(){
+ echo -e $LINEBR
+ echo "Edit directory group"
+ echo -n "directory:  "
+ read DIR
+ [ -d $DIR ]
+ if [[ $? -eq 0 ]]
+ then
+   echo -n "Current group: "; ls -dl $DIR | awk '{print $4}'
+   echo -n "group: "; read GROUP
+   chgrp $GROUP $DIR 2>/dev/null
+   if [[ $? -eq 0 ]]
+   then
+     echo "Group '$GROUP' is set to group of directory '$DIR'"
+   else
+     echo "Exception when setting group"
+     echo "Group '$GROUP' does not exsist"
+   fi
+ else
+   echo "Exception when selecting directory"
+   echo "Directory '$DIR' does not exsist"
+ fi
+}
+
+
+function directory_edit_premissions(){
+ echo -e $LINEBR
+ echo "Edit Directory Premissions"
+ echo -n "directory: "
+ read DIR
+ [ -d $DIR ]
+ if [[ $? -eq 0 ]]
+ then
+   PERMISSIONS=$(ls -dl $DIR | awk '{print $1}')
+   if [[ ${PERMISSIONS:1:1} = "r" ]]
+   then
+     echo -e "\nOwner has read permission"
+   else
+     echo -e "\nOwner has no read permission"
+   fi
+   if [[ ${PERMISSIONS:2:1} = "w" ]]
+   then
+     echo "Owner has write permission"
+   else
+     echo "Owner has no write permission"
+   fi
+   if [[ ${PERMISSIONS:3:1} = "x" ]]
+   then     
+     echo "Owner has execute permission"
+   elif [[ ${PERMISSIONS:3:1} = "s" ]]
+   then
+     echo “SetUID is active”
+   else
+     echo "Owner has no execute permission"
+   fi   
+   if [[ ${PERMISSIONS:4:1} = "r" ]]
+   then
+     echo "Group members have read permissions"
+   else
+     echo "Group members have no read permissions"
+   fi
+   if [[ ${PERMISSIONS:5:1} = "w" ]]
+   then
+     echo "Group members have write permissions"               
+   else
+     echo "Group members have no write  permissions"
+   fi
+   if [[ ${PERMISSIONS:6:1} = "x" ]]
+   then
+     echo "Group members have execute permissions"
+   elif [[ ${PERMISSIONS:6:1} = "s" ]] 
+   then
+     echo "setGID is enabled, group members have execute permissions"
+   elif [[ ${PERMISSIONS:6:1} = "S" ]]
+   then
+     echo "setGID is enabled, group members do not have execute permissions"
+   else
+     echo "Group members have no execute permissions"
+   fi
+   if [[ ${PERMISSIONS:7:1} = "r" ]]
+   then
+     echo "Others have read permissions"
+   else
+     echo "Others have no read permissions"
+   fi
+   if [[ ${PERMISSIONS:8:1} = "w" ]]
+   then   
+     echo "Others have write permissions"
+   else
+     echo "Others have no write permissions"
+   fi
+   if [[ ${PERMISSIONS:9:1} = "x" ]]
+   then
+     echo "Others have execute permissions"
+   elif [[ ${PERMISSIONS:9:1} = "t" ]]
+   then
+     echo "sticky-bit enabled, others have execute permissions"
+   elif [[ ${PERMISSIONS:9:1} = "T" ]]
+   then
+      echo "sticky-bit is enabled, others do not have execute permissions"
+   else
+     echo "Others have no execute permissions"
+   fi
+
+   echo $MARGIN
+   echo "0 = no permissions"
+   echo "1 = execute permissions"
+   echo "2 = write permissions"
+   echo "4 = read permissions"
+   echo "Premissions will be assigned in order of: user, group, others."
+   echo "Add up premmision values to combine them."
+   echo $MARGIN
+   echo "Set owner permissions (0-7)"
+   read OWNPER
+   while [ $OWNPER -gt 7 ] || [ $OWNPER -lt 0 ]
+   do
+     echo "Enter value in range [0-7]"
+     read OWNPER
+   done
+   echo "Set group permissions"
+   read GRPPER
+   while [ $GRPPER -gt 7 ] || [ $GRPPER -lt 0 ]
+   do
+     echo "Enter value in range [0-7]"
+     read GRPPER
+   done
+   echo "Set others permissions"
+   read OTHPER
+   while [ $OTHPER -gt 7 ] || [ $OTHPER -lt 0 ]
+   do
+     echo "Enter value in range [0-7]"
+     read OTHPER
+   done
+   chmod $OWNPER$GRPPER$OTHPER $DIR 2> /dev/null
+   if [[ $? -eq 0 ]]
+   then
+     echo "Directory '$DIR' premissions have been set"
+   else
+     echo "Exception when editing directory premissions"
+   fi
+ else
+   echo "Exception when selecting directory"
+   echo "Directory '$DIR' does not exsist"
+ fi
+}
+
+function directory_edit_stickybit(){
+ echo -e $LINEBR
+ echo -e "Edit Directory sticky-bit"
+ echo -n "directory: "
+ read DIR
+ [ -d $DIR ]
+ if [[ $? -eq 0 ]]
+ then
+   STICKYBIT=$(ls -dl $DIR | awk '{print $1}')
+   if [[ ${STICKYBIT:9:1} = "t" ]]
+   then
+     echo -e "\nSticky bit [enabled]"
+     echo "Toggle sticky-bit status? [y]es or [n]o"
+     read CHECKER
+     if [[ $CHECKER = "y" ]]
+     then
+       chmod -t $DIR 2>/dev/null
+       if [[ $? -eq 0 ]]
+       then  
+         echo "Sticky bit [disabled]"
+       else
+         echo "Exception when disabeling sticky-bit"
+       fi
+     else
+       echo "Sticky bit [enabled]"
+     fi
+   else
+     echo "Sticky bit [disabled]"
+     echo "Toggle sticky-bit status? [y]es or [n]o"
+     read CHECKER
+     if [[ $CHECKER = "y" ]]
+     then
+       chmod +t $DIR 2>/dev/null
+       if [[ $? -eq 0 ]]
+       then
+         echo "Sticky bit [enabled]"
+       else
+         echo "Exception when enabeling sticky-bit"
+       fi
+     else
+      echo "Sticky bit [disabled]"
+     fi                
+   fi
+ else
+   echo "Exception when selecting directory"
+   echo "Directory '$DIR' does not exsist"
+ fi
+}
+
+function directory_edit_gid(){
+ echo -e $LINEBR
+ echo "Edit Directory setGID"
+ echo -n "directory:"
+ read DIR
+ [ -d $DIR ]
+ if [[ $? -eq 0 ]]
+ then
+   SETGID=$(ls -dl $DIR | awk '{print $1}')
+   if [[ ${SETGID:6:1} = "s" ]] || [[ ${SETGID:6:1} = "S" ]]
+   then
+     echo "SetGID [enabled]"
+     echo "Toggle setGID status? [y]es or [n]o"
+     read CHECKER
+     if [[ $CHECKER = "y" ]]
+     then
+       chmod g-s $DIR 2>/dev/null
+       if [[ $? -eq 0 ]]
+       then
+         echo "setGID [disabled]"
+       else
+         echo "Exception when disabeling setGID"
+       fi
+     else
+       echo "setGID [enabled]"
+     fi
+   else
+     echo "setGID [disabled]"
+     echo "Toggle setGID status? [y]es or [n]o"
+     read CHECKER
+     if [[ $CHECKER = "y" ]]
+     then
+       chmod g+s $DIR 2>/dev/null
+       if [[ $? -eq 0 ]]
+       then
+         echo "setGID [enabled]"
+       else
+         echo "Exception when enabeling setGID"
+       fi
+     else
+       echo "setGID [disabled]"
+     fi
+   fi
+ else
+   echo "Exception when selecting directory"
+   echo "Directory '$DIR' does not exsist"
+ fi
+}
+
+function directory_edit_date(){
+ echo -e $LINEBR
+ echo "Display Directory Modification Date"
+ echo -n "directory: "
+ read DIR
+ [ -d $DIR ]
+ if [[ $? -eq 0 ]]
+ then
+   date -r $DIR 2>/dev/null
+   if [[ $? -ne 0 ]]
+   then
+     echo "Exception when displaying date"
+   fi
+ else
+   echo "Exception when selecting directory"
+   echo "Directory '$DIR' does not exsist"
+ fi
+}
+
+function directory_edit()
+{
+ clear
+ header "Edit Directory"
+ menuoption 1 "Edit directory owner"
+ menuoption 2 "Edit directory group"
+ menuoption 3 "Edit directory premissions"
+ menuoption 4 "Edit directory stickybit - enable/disable"
+ menuoption 5 "Edit directory setGID - enable/disable"
+ menuoption 6 "Display directory modification date"
+ menuoption "ANY" "Exit"
+ echo $MARGIN
+ echo "option: "; read OPTION
+ case ${OPTION^^} in
+   1)
+     directory_edit_owner
+     ;;
+   2)
+     directory_edit_group
+     ;;
+   3)
+     directory_edit_premissions
+     ;;
+   4)
+     directory_edit_stickybit
+     ;;
+   5)
+     directory_edit_gid
+     ;;
+   6)
+     directory_edit_date
+     ;;
+   *)
+     echo $MARGIN
+     echo -e "Exiting"
+     ;;
+ esac
+ continue
+}
+
+#MENU
+function menu(){
+ while [ 1 ]
+ do
+   clear
+   header "System Manager Script" $CLRY
+   menuoption 1 "Network Manager"
+   menuoption 2 "User Manager"
+   menuoption 3 "Group Manager"
+   menuoption 4 "Directory Manager"
+   menuoption 0 "Exit"
+   echo -e $LINEBR
+   echo -n " option: "; read INPUT
+   case "${INPUT^^}" in
+     1|NM|NETWORK)
+       networkManager
+       ;;
+     2|UM|USER)
+       userManager
+       ;;
+     3|GM|GROUP)
+       groupManager
+       ;;
+     4|DM|DIRECTORY)
+       directoryManager
+       ;;
+     0|EXIT|X|Q)
+       clear
+       echo -e $LINEB
+       echo -e "${CLRY}EXITING${STL}..."
+       echo -e $LINEBR
+       sleep 1
+       clear
+       exit 0
+       ;;
+     *)
+       echo " Invalid option: ‘$INPUT’"
+       continue
+       ;;
+   esac
+ done
+}
+
+function start(){
+ if [[ "$EUID" = 0  ]]; then
+   menu
+ else
+   echo "Script needs sudo premission."
+   exit 1
+ fi
+}
+start
+
+
+
